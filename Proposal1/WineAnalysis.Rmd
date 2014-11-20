@@ -1,0 +1,105 @@
+---
+title: "P1_Wine"
+author: "Huseyin Coskun/Ruben Garzon"
+date: "15 Nov 2014"
+output: html_document
+---
+
+We will first read the Dataset obtained from UCI ML repository
+https://archive.ics.uci.edu/ml/datasets/Wine
+
+```{r}
+wine <- read.csv("../Datasets/Wine/wine.data", header=FALSE)
+colnames(wine) <- c("class","Alcohol","Malic Acid","Ash","Alcalinity of Ash","Magnesium","Total Phenols","Flavanoids","Nonflavanoid Phenols","Proanthocyanins","Color Intensity","Hue","0D280/OD315 of Diluted Wines","Proline")
+
+```
+We can plot the data with PCA to explore the distribution of classes (UNIFINISHED)
+
+```{r}
+# log transform 
+log.wine <- log(wine[, 2:14])
+
+ 
+# apply PCA - scale. = TRUE is highly 
+# advisable, but default is FALSE. 
+wine.pca <- princomp(log.wine,
+                 center = TRUE,
+                 scale. = TRUE,cor=TRUE,scores=TRUE) 
+summary(wine.pca)
+plot(wine.pca, type = "l")
+library(rgl)
+plot3d(wine.pca$scores[,1:3], col=wine[,1])
+```
+
+We will first create the training and test with alpha = 0.6 (same value used in the paper)
+
+```{r}
+library(caret)
+inTrain <- createDataPartition(wine$class, p=0.6, list=FALSE)
+trainingSet <- wine[inTrain,]
+testSet <- wine[-inTrain,]
+```
+We would need to scale the variables, but svm seems to do this for us, so at the moment we will not do this.
+
+We apply SVM for prototype selection. We will choose the support vectors as prototypes, although some improvement could be done.
+__PENDING__ Adjust type of kernel used, cost parameter.
+```{r}
+library(e1071)
+library(caret)
+svmfit=svm(class~., data=trainingSet, kernel="linear", cost=10,scale=FALSE)
+prototypes<-trainingSet[svmfit$index,]
+prototypes<-prototypes[1:20,]
+```
+
+We now compute the Disimilarity matrix using Euclidean distance
+The method dist is returning a vector with the lower triangle of the computed distances.
+This is not easy because we need to concatenate samples matrix + prototype matrix and then select only the elements of the resulting vector from applying dist that we are interested in.
+__Pending__ Should we standarize before computing distances (dissimilarity)
+```{r}
+
+# distances <- dist(rbind(trainingSet[,-1],prototypes[,-1]),method="euclidean")
+# elements <- nrow(trainingSet)*nrow(prototypes)
+# lowindex <- nrow(trainingSet)-1 
+# upindex <- lowindex + elements -1
+# relevantDistances <- distances[lowindex:upindex]
+# dissimilarities <- matrix(relevantDistances,nrow=nrow(trainingSet),ncol=nrow(prototypes))
+computeEuclideanDissimilarities <- function (sampMatrix,prototypesMatrix)
+{
+        distances <- as.matrix(dist(rbind(sampMatrix,prototypesMatrix),method="euclidean"))
+        elements <- nrow(sampMatrix)*nrow(prototypesMatrix)
+        dissimMatrix<-distances[1:nrow(sampMatrix),(nrow(sampMatrix)+1):(nrow(sampMatrix)+nrow(prototypesMatrix))]
+        return (dissimMatrix)
+}
+
+trainSetDissimilarities <- computeEuclideanDissimilarities (trainingSet[,-1],prototypes[,-1])
+```
+
+Now we should apply QDA to the dissimilarity training space
+
+```{r}
+library(MASS)
+dissSpace<-as.data.frame(cbind(trainingSet$class,trainSetDissimilarities))
+colnames(dissSpace)[1]<-"class"
+qda.fit <-qda(class~.,data=dissSpace)
+
+```
+
+We will now use the fitted QDA against the testSet and compute the classification Error
+
+```{r}
+testSetDissimilarities <- computeEuclideanDissimilarities (testSet[,-1],prototypes[,-1])
+testSetDissSpace <- as.data.frame(cbind(testSet$class,testSetDissimilarities))
+colnames(testSetDissSpace)<-colnames(dissSpace)
+qda.testpred <- predict(qda.fit, testSetDissSpace)
+table(qda.testpred$class,testSet$class)
+confusionMatrix(qda.testpred$class,testSet$class)
+```
+
+Question, in the paper they compare by number of prototypes, should we also do all this tests with different number of prototypes?
+
+The problem now is that qda is not working fine with more than 26 prototypes, probably because one of the classes has only 59 elements. Is qda doing some kind of CV? How did they compute 54 prototypes with 35 samples? 0.6*59=35,4
+
+Another improvement could be done by plotting the dissimilarity space with PCA, trying to see if the decision boundaries in that space can be linear or not.
+
+
+
