@@ -1,4 +1,4 @@
-#Read the datase
+#Read the dataset
 wine <- read.csv("../Datasets/Wine/wine.data", header=FALSE)
 colnames(wine) <- c("class","Alcohol","Malic Acid","Ash","Alcalinity of Ash","Magnesium","Total Phenols","Flavanoids","Nonflavanoid Phenols","Proanthocyanins","Color Intensity","Hue","0D280/OD315 of Diluted Wines","Proline")
 #Load required libraries
@@ -113,7 +113,7 @@ runAnalysis <- function(numPrototypes,useSV)
 #Finally plot the classification errors obtained for both cases
 protoRange <- 3:27
 accuraciesNonSV <- lapply(protoRange,runAnalysis, useSV=FALSE)
-plot(protoRange,100*(1-as.numeric(accuraciesLinear)),type="l",col="blue",main='Classification error',ylab='Classification error',xlab='Number of prototypes')
+plot(protoRange,100*(1-as.numeric(accuraciesNonSV)),type="l",col="blue",main='Classification error',ylab='Classification error',xlab='Number of prototypes')
 max(as.numeric(accuraciesNonSV))
 
 accuraciesSV <- lapply(protoRange,runAnalysis,useSV=TRUE)

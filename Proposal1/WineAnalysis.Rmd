@@ -1,117 +1,197 @@
 ---
-title: "P1_Wine"
+title: "Proposal1, using SVM for prototype selection. Wine Dataset."
 author: "Huseyin Coskun/Ruben Garzon"
 date: "15 Nov 2014"
 output: html_document
 ---
 
+#About this document
+This document describes the analysis done with the Wine dataset.
+
+#Exploratory Analysis
 We will first read the Dataset obtained from UCI ML repository
 https://archive.ics.uci.edu/ml/datasets/Wine
 
-```{r}
+```{r, echo=FALSE}
+#Read the datasets
 wine <- read.csv("../Datasets/Wine/wine.data", header=FALSE)
 colnames(wine) <- c("class","Alcohol","Malic Acid","Ash","Alcalinity of Ash","Magnesium","Total Phenols","Flavanoids","Nonflavanoid Phenols","Proanthocyanins","Color Intensity","Hue","0D280/OD315 of Diluted Wines","Proline")
+#Load required libraries
+#Libraries
+library(rgl)
+library(caret)
+library(e1071)
+library(caret)
+library(MASS)
 
 ```
 We can plot the data with PCA to explore the distribution of classes (UNIFINISHED)
 
 ```{r}
-# log transform 
+# Log transform, just for plotting with PCA
 log.wine <- log(wine[, 2:14])
-
- 
 # apply PCA - scale. = TRUE is highly 
 # advisable, but default is FALSE. 
 wine.pca <- princomp(log.wine,
-                 center = TRUE,
-                 scale. = TRUE,cor=TRUE,scores=TRUE) 
-summary(wine.pca)
+                     center = TRUE,
+                     scale. = TRUE,cor=TRUE,scores=TRUE) 
+#summary(wine.pca)
 plot(wine.pca, type = "l")
-library(rgl)
 plot3d(wine.pca$scores[,1:3], col=wine[,1])
 ```
 
-We will first create the training and test with alpha = 0.6 (same value used in the paper)
-
-```{r}
-library(caret)
-inTrain <- createDataPartition(wine$class, p=0.6, list=FALSE)
-trainingSet <- wine[inTrain,]
-testSet <- wine[-inTrain,]
-```
-We would need to scale the variables, but svm seems to do this for us, so at the moment we will not do this.
-
-We apply SVM for prototype selection. We will choose the support vectors as prototypes, although some improvement could be done.
-__PENDING__ Adjust type of kernel used, cost parameter.
-```{r}
-library(e1071)
-library(caret)
-svmfit=svm(class~., data=trainingSet, kernel="linear", cost=10,scale=FALSE)
-prototypes<-trainingSet[svmfit$index,]
-prototypes<-prototypes[1:20,]
-```
-
-We now compute the Disimilarity matrix using Euclidean distance
-The method dist is returning a vector with the lower triangle of the computed distances.
+We define an auxiliar function to compute Euclidean Distance between samples and prototypes.
+The method "dist" is returning a vector with the lower triangle of the computed distances.
 This is not easy because we need to concatenate samples matrix + prototype matrix and then select only the elements of the resulting vector from applying dist that we are interested in.
-__Pending__ Should we standarize before computing distances (dissimilarity)
 ```{r}
-
-# distances <- dist(rbind(trainingSet[,-1],prototypes[,-1]),method="euclidean")
-# elements <- nrow(trainingSet)*nrow(prototypes)
-# lowindex <- nrow(trainingSet)-1 
-# upindex <- lowindex + elements -1
-# relevantDistances <- distances[lowindex:upindex]
-# dissimilarities <- matrix(relevantDistances,nrow=nrow(trainingSet),ncol=nrow(prototypes))
+#Compute distance between samples and each prototype
 computeEuclideanDissimilarities <- function (sampMatrix,prototypesMatrix)
-{
+{      
         distances <- as.matrix(dist(rbind(sampMatrix,prototypesMatrix),method="euclidean"))
         elements <- nrow(sampMatrix)*nrow(prototypesMatrix)
         dissimMatrix<-distances[1:nrow(sampMatrix),(nrow(sampMatrix)+1):(nrow(sampMatrix)+nrow(prototypesMatrix))]
         return (dissimMatrix)
 }
 
-trainSetDissimilarities <- computeEuclideanDissimilarities (trainingSet[,-1],prototypes[,-1])
 ```
 
-Now we should apply QDA to the dissimilarity training space
+We create the core function for our analysis. Given a train and test set, and a number of prototypes do:  
+* Fit an svm on the trainSet. We first used svm using linear and rbf kernels. Finally we used tune.svm, which is supposed to adjust the svm parameters for us (we should investigate more on this).
+* Choose the prototypes. We first choosed the prototypes among the SV, but we later realized that choosing them among the non-SV made more sense, as they are further from the classification boundary, and therefore should be more representative of the classes. We will anyway work with both options and compare them.
+* Once we have the prototypes, we compute the dissimilarity Matrix, in this case using Euclidean distance.
+* Fit a QDA on the dissimilarity trainset space.
+* Predict with the fitted QDA on the test set, and we compute accuracy and classification error.
 
 ```{r}
-library(MASS)
-dissSpace<-as.data.frame(cbind(trainingSet$class,trainSetDissimilarities))
-colnames(dissSpace)[1]<-"class"
-qda.fit <-qda(class~.,data=dissSpace)
+#Run analysis, basically:
+#Take the train and test set (they are generated outside this function)
+#Fit an SVM
+#Choose the prototypes
+#Compute dissimilarity matrix
+#Fit QDA with dissimilarity matrix
+#Compute accuracy on the test set
+runAnalysis <- function(numPrototypes,useSV)
+{
+         print(c('Iterating with ',numPrototypes,' prototypes'))
+
+         svmfit <- tune.svm(class~.,data=trainingSet)
+         svmfit$best.model
+        if (useSV == TRUE)
+        { 
+                #Here we use the support vectors as prototypes
+                print ("Using support vectors")
+                prototypes <- svmfit$best.model$ind
+        }
+        else
+        {       #Here we use the non-support vectors as prototypes
+                print ("Using non-support vectors as prototypes")
+                allSamples<- 1:nrow(wine)
+                prototypes <- allSamples[-svmfit$best.model$ind]
+
+        }
+
+        prototypes<-prototypes[1:numPrototypes]
+        prototyp<-trainingSet[prototypes,]
+        trainSetDissimilarities <- computeEuclideanDissimilarities (trainingSet[,-1],prototyp[,-1])
+
+        dissSpace<-as.data.frame(cbind(trainingSet$class,trainSetDissimilarities))
+        colnames(dissSpace)[1]<-"class"
+        qda.fit <-qda(class~.,data=dissSpace)
+        
+        testSetDissimilarities <- computeEuclideanDissimilarities (testSet[,-1],prototyp[,-1])
+        testSetDissSpace <- as.data.frame(cbind(testSet$class,testSetDissimilarities))
+        colnames(testSetDissSpace)<-colnames(dissSpace)
+        qda.testpred <- predict(qda.fit, testSetDissSpace)
+        print(table(qda.testpred$class,testSet$class))
+        cf<-confusionMatrix(qda.testpred$class,testSet$class)
+        acc <- cf$overall['Accuracy']
+        print(acc)
+        return(acc)
+}
+```
+
+Once we have the core analysis function, we will apply it to the WINE dataset.  
+First we generate the train and test set. The paper reports alpha=0.6 (train/test) per class.
+
+```{r,echo=FALSE}
+        #All this code is used to achieve a 60% train/test per class
+         smp_size <- floor(0.60 * length(which(wine$class==1)))
+         set.seed(123)
+         inTrain1 <- sample(length(which(wine$class==1)),, size = smp_size)
+         trainingSet1 <- wine[which(wine$class==1),][inTrain1,]
+         testSet1 <- wine[which(wine$class==1),][-inTrain1,]
+
+         smp_size <- floor(0.60 * length(which(wine$class==2)))
+         set.seed(123)
+        inTrain2 <- sample(length(which(wine$class==2)),, size = smp_size)
+        trainingSet2 <- wine[which(wine$class==2),][inTrain2,]
+        testSet2 <- wine[which(wine$class==2),][-inTrain2,]
+
+        smp_size <- floor(0.60 * length(which(wine$class==3)))
+        set.seed(123)
+        inTrain3 <- sample(length(which(wine$class==3)),, size = smp_size)
+        trainingSet3 <- wine[which(wine$class==3),][inTrain3,]
+        testSet3 <- wine[which(wine$class==3),][-inTrain3,] 
+        #Now we have train/test sets with 60% train/test per class
+        trainingSet <- rbind(trainingSet1,trainingSet2,trainingSet3)
+        testSet <- rbind(testSet1,testSet2,testSet3)
+        #We print the number of samples per class just to be sure it works ok
+        length(which(trainingSet$class==1))
+        length(which(testSet$class==1))
+
+        length(which(trainingSet$class==2))
+        length(which(testSet$class==2))
+        
+        length(which(trainingSet$class==3))
+        length(which(testSet$class==3))
+ 
+```
+
+Then we run the analysis for different number of prototypes and both for SV and for non-SV as prototypes. We finally plot the classification errors obtained in both cases.  
+```{r,echo=FALSE}
+#Now we will run the analysis for different number of prototypes
+#Using the support vectors as prototypes and the non-support vectors as prototypes
+#Finally plot the classification errors obtained for both cases
+protoRange <- 3:27
+accuraciesNonSV <- lapply(protoRange,runAnalysis, useSV=FALSE)
+plot(protoRange,100*(1-as.numeric(accuraciesNonSV)),type="l",col="blue",main='Classification error',ylab='Classification error',xlab='Number of prototypes')
+max(as.numeric(accuraciesNonSV))
+
+accuraciesSV <- lapply(protoRange,runAnalysis,useSV=TRUE)
+lines(protoRange,100*(1-as.numeric(accuraciesSV)),type="l",col="red",main='Classification error',ylab='Classification error',xlab='Number of prototypes')
+legend("topright", legend =c("Non support vectors as prototypes","Support Vectors as prototypes"), col=c("blue","red"),pch=1)
+max(as.numeric(accuraciesSV))
 
 ```
 
-We will now use the fitted QDA against the testSet and compute the classification Error
+# Conclusions
 
-```{r}
-testSetDissimilarities <- computeEuclideanDissimilarities (testSet[,-1],prototypes[,-1])
-testSetDissSpace <- as.data.frame(cbind(testSet$class,testSetDissimilarities))
-colnames(testSetDissSpace)<-colnames(dissSpace)
-qda.testpred <- predict(qda.fit, testSetDissSpace)
-table(qda.testpred$class,testSet$class)
-confusionMatrix(qda.testpred$class,testSet$class)
-```
+It seems using non-SVs as prototypes provide better results than using SVs. This is aligned with our previous assumptions. However, the results obtained are worse than the ones
 
-Question 1:
-We plotted the dataset with PCA. By checking the shape of the clusters (classes), we decided to use a non-linear kernel. Does it make sense or these assumptions do not fit here.
+# Questions
 
-Question 2:
+### Question 1:
+We plotted the dataset with PCA. By checking the shape of the clusters (classes), we decided to use a non-linear kernel. Does it make sense? (Finally we used tune.svm)
+
+### Question 2:
 We initially selected a subset of the Support Vectors as prototypes (random subset increasing 3, 4,5 ...,) to reproduce the work in the paper. We then thought that probably it makes more sense to choose the samples that are not support vectors, as they are probably more representative of groups of samples.
 
-Question 3:
-In the paper, they use alpha=0.6 for training/testing distribution, per class. This results in a dissimilarity space with around 30 samples (for one class) and Nprototype features. We cannot fit QDA with more than 26 prototypes due to the limited number of samples in some of the classes. How did they reach a graphic from 3 to 54 prototypes on the Wine dataset?
+### Question 3:
+In the paper, they use alpha=0.6 for training/testing distribution, per class. This results in a dissimilarity space with around 30 samples (for one class) and Nprototype features. We cannot fit QDA with more than 26 prototypes due to the limited number of samples in some of the classes. How did they reach a graphic from 3 to 54 prototypes on the Wine dataset? Our QDAs fail with more than 27 prototypes. Is qda doing some kind of CV? How did they compute 54 prototypes with 35 samples? 0.6*59=35,4
 
-Pending work:
+### Question 4:
+In the paper they talk about Classification error. We assumed class. error as (1-Accuracy). Is this correct?
+
+### Question 5:
+Do we need to scale variables in some moment? SVM seems to scale them for us, but we should check if needed. Should we standarize when computing dissimilarity matrix?
 
 
+# Pending work:  
+* Analyse svm tuning parameters in detail.  
+* Analyse qda tuning parameters in detail.  
+* Compare against a QDA fitted in the original sample space (not done in the paper).  
+* Try different prototype selection subsets (now we just use sequencial selection among the SVs or the non-SVs)
+* Another improvement could be done by plotting the dissimilarity space with PCA, trying to see if the decision boundaries in that space can be linear or not.
 
-The problem now is that qda is not working fine with more than 26 prototypes, probably because one of the classes has only 59 elements. Is qda doing some kind of CV? How did they compute 54 prototypes with 35 samples? 0.6*59=35,4
-
-Another improvement could be done by plotting the dissimilarity space with PCA, trying to see if the decision boundaries in that space can be linear or not.
-
-Question 1
 
 
