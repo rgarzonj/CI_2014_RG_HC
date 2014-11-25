@@ -95,11 +95,23 @@ table(qda.testpred$class,testSet$class)
 confusionMatrix(qda.testpred$class,testSet$class)
 ```
 
-Question, in the paper they compare by number of prototypes, should we also do all this tests with different number of prototypes?
+Question 1:
+We plotted the dataset with PCA. By checking the shape of the clusters (classes), we decided to use a non-linear kernel. Does it make sense or these assumptions do not fit here.
+
+Question 2:
+We initially selected a subset of the Support Vectors as prototypes (random subset increasing 3, 4,5 ...,) to reproduce the work in the paper. We then thought that probably it makes more sense to choose the samples that are not support vectors, as they are probably more representative of groups of samples.
+
+Question 3:
+In the paper, they use alpha=0.6 for training/testing distribution, per class. This results in a dissimilarity space with around 30 samples (for one class) and Nprototype features. We cannot fit QDA with more than 26 prototypes due to the limited number of samples in some of the classes. How did they reach a graphic from 3 to 54 prototypes on the Wine dataset?
+
+Pending work:
+
+
 
 The problem now is that qda is not working fine with more than 26 prototypes, probably because one of the classes has only 59 elements. Is qda doing some kind of CV? How did they compute 54 prototypes with 35 samples? 0.6*59=35,4
 
 Another improvement could be done by plotting the dissimilarity space with PCA, trying to see if the decision boundaries in that space can be linear or not.
 
+Question 1
 
 
