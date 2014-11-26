@@ -39,10 +39,15 @@ computeEuclideanDissimilarities <- function (sampMatrix,prototypesMatrix)
 #Compute accuracy on the test set
 runAnalysis <- function(numPrototypes,useSV)
 {
-         print(c('Iterating with ',numPrototypes,' prototypes'))
+        print(c('Iterating with ',numPrototypes,' prototypes'))
+                
+        trainSetDissimilarities <- computeEuclideanDissimilarities (trainingSet[,-1],trainingSet[,-1])
+        
+        dissSpace<-as.data.frame(cbind(trainingSet$class,trainSetDissimilarities))
+        colnames(dissSpace)[1]<-"class"
 
-         svmfit <- tune.svm(class~.,data=trainingSet)
-         svmfit$best.model
+        svmfit <- tune.svm(class~.,data=dissSpace)
+        svmfit$best.model
         if (useSV == TRUE)
         { 
                 #Here we use the support vectors as prototypes
@@ -54,15 +59,13 @@ runAnalysis <- function(numPrototypes,useSV)
                 print ("Using non-support vectors as prototypes")
                 allSamples<- 1:nrow(wine)
                 prototypes <- allSamples[-svmfit$best.model$ind]
-
+                
         }
-
+        
         prototypes<-prototypes[1:numPrototypes]
         prototyp<-trainingSet[prototypes,]
-        trainSetDissimilarities <- computeEuclideanDissimilarities (trainingSet[,-1],prototyp[,-1])
-
-        dissSpace<-as.data.frame(cbind(trainingSet$class,trainSetDissimilarities))
-        colnames(dissSpace)[1]<-"class"
+        
+        
         qda.fit <-qda(class~.,data=dissSpace)
         
         testSetDissimilarities <- computeEuclideanDissimilarities (testSet[,-1],prototyp[,-1])
@@ -75,39 +78,39 @@ runAnalysis <- function(numPrototypes,useSV)
         print(acc)
         return(acc)
 }
- 
 
-        #All this code is used to achieve a 60% train/test per class
-         smp_size <- floor(0.60 * length(which(wine$class==1)))
-         set.seed(123)
-         inTrain1 <- sample(length(which(wine$class==1)),, size = smp_size)
-         trainingSet1 <- wine[which(wine$class==1),][inTrain1,]
-         testSet1 <- wine[which(wine$class==1),][-inTrain1,]
 
-         smp_size <- floor(0.60 * length(which(wine$class==2)))
-         set.seed(123)
-        inTrain2 <- sample(length(which(wine$class==2)),, size = smp_size)
-        trainingSet2 <- wine[which(wine$class==2),][inTrain2,]
-        testSet2 <- wine[which(wine$class==2),][-inTrain2,]
+#All this code is used to achieve a 60% train/test per class
+smp_size <- floor(0.60 * length(which(wine$class==1)))
+set.seed(123)
+inTrain1 <- sample(length(which(wine$class==1)),, size = smp_size)
+trainingSet1 <- wine[which(wine$class==1),][inTrain1,]
+testSet1 <- wine[which(wine$class==1),][-inTrain1,]
 
-        smp_size <- floor(0.60 * length(which(wine$class==3)))
-        set.seed(123)
-        inTrain3 <- sample(length(which(wine$class==3)),, size = smp_size)
-        trainingSet3 <- wine[which(wine$class==3),][inTrain3,]
-        testSet3 <- wine[which(wine$class==3),][-inTrain3,] 
-        #Now we have train/test sets with 60% train/test per class
-        trainingSet <- rbind(trainingSet1,trainingSet2,trainingSet3)
-        testSet <- rbind(testSet1,testSet2,testSet3)
-        #We print the number of samples per class just to be sure it works ok
-        length(which(trainingSet$class==1))
-        length(which(testSet$class==1))
+smp_size <- floor(0.60 * length(which(wine$class==2)))
+set.seed(123)
+inTrain2 <- sample(length(which(wine$class==2)),, size = smp_size)
+trainingSet2 <- wine[which(wine$class==2),][inTrain2,]
+testSet2 <- wine[which(wine$class==2),][-inTrain2,]
 
-        length(which(trainingSet$class==2))
-        length(which(testSet$class==2))
-        
-        length(which(trainingSet$class==3))
-        length(which(testSet$class==3))
- 
+smp_size <- floor(0.60 * length(which(wine$class==3)))
+set.seed(123)
+inTrain3 <- sample(length(which(wine$class==3)),, size = smp_size)
+trainingSet3 <- wine[which(wine$class==3),][inTrain3,]
+testSet3 <- wine[which(wine$class==3),][-inTrain3,] 
+#Now we have train/test sets with 60% train/test per class
+trainingSet <- rbind(trainingSet1,trainingSet2,trainingSet3)
+testSet <- rbind(testSet1,testSet2,testSet3)
+#We print the number of samples per class just to be sure it works ok
+length(which(trainingSet$class==1))
+length(which(testSet$class==1))
+
+length(which(trainingSet$class==2))
+length(which(testSet$class==2))
+
+length(which(trainingSet$class==3))
+length(which(testSet$class==3))
+
 #Now we will run the analysis for different number of prototypes
 #Using the support vectors as prototypes and the non-support vectors as prototypes
 #Finally plot the classification errors obtained for both cases
@@ -120,10 +123,3 @@ accuraciesSV <- lapply(protoRange,runAnalysis,useSV=TRUE)
 lines(protoRange,100*(1-as.numeric(accuraciesSV)),type="l",col="red",main='Classification error',ylab='Classification error',xlab='Number of prototypes')
 legend("topright", legend =c("Non support vectors as prototypes","Support Vectors as prototypes"), col=c("blue","red"),pch=1)
 max(as.numeric(accuraciesSV))
-
-# We compute the qda on the original dataset and compute accuracy
-original.qda <- qda(class~.,data=trainingSet)
-original.qda.predict <- predict(original.qda, testSet)
-cf<-confusionMatrix(original.qda.predict$class,testSet$class)
-acc <- cf$overall['Accuracy']
-acc
